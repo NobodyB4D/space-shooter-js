@@ -25,6 +25,13 @@ let enemyBullets = [];
 let enemies = [];
 let boss = { active: false, x: canvas.width / 2 - 40, y: 60, width: 80, height: 80, hp: 0, maxHp: 0, dx: 3 };
 
+let powerUps = [];
+let doubleShotTimer = 0;
+let shieldActive = false;
+let allyTimer = 0;
+let ally = { x: 0, y: 0, shootTimer: 0 };
+let playerInvincible = 0;
+
 const enemyRows = 3;
 const enemyCols = 8;
 const enemyWidth = 40;
@@ -63,21 +70,51 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keyup", (e) => {
-    if (e.key === "ArrowRight" || e.key === "Right" || e.key === "ArrowLeft" || e.key === "Left" || e.key === "d" || e.key === "a") {
-        player.dx = 0;
-    }
-    if (e.key === "ArrowUp" || e.key === "Up" || e.key === "ArrowDown" || e.key === "Down" || e.key === "w" || e.key === "s") {
-        player.dy = 0;
-    }
+    if (e.key === "ArrowRight" || e.key === "Right" || e.key === "ArrowLeft" || e.key === "Left" || e.key === "d" || e.key === "a") player.dx = 0;
+    if (e.key === "ArrowUp" || e.key === "Up" || e.key === "ArrowDown" || e.key === "Down" || e.key === "w" || e.key === "s") player.dy = 0;
 });
 
 function shoot() {
     if (gameOver) return;
-    bullets.push({ x: player.x + player.width / 2 - 2, y: player.y, width: 4, height: 12, speed: 7 });
+    if (doubleShotTimer > 0) {
+        bullets.push({ x: player.x, y: player.y, width: 4, height: 12, speed: 7 });
+        bullets.push({ x: player.x + player.width - 4, y: player.y, width: 4, height: 12, speed: 7 });
+    } else {
+        bullets.push({ x: player.x + player.width / 2 - 2, y: player.y, width: 4, height: 12, speed: 7 });
+    }
+}
+
+function hitPlayer() {
+    if (playerInvincible > 0) return;
+    if (shieldActive) {
+        shieldActive = false;
+        playerInvincible = 30;
+    } else {
+        lives--;
+        playerInvincible = 30;
+        if (lives <= 0) {
+            checkHighScore();
+            gameOver = true;
+        }
+    }
 }
 
 function update() {
     if (gameOver) return;
+
+    if (playerInvincible > 0) playerInvincible--;
+    if (doubleShotTimer > 0) doubleShotTimer--;
+    
+    if (allyTimer > 0) {
+        allyTimer--;
+        ally.x = player.x + 50;
+        ally.y = player.y + 10;
+        ally.shootTimer++;
+        if (ally.shootTimer >= 30) {
+            bullets.push({ x: ally.x + 10, y: ally.y, width: 4, height: 12, speed: 7 });
+            ally.shootTimer = 0;
+        }
+    }
 
     player.x += player.dx;
     player.y += player.dy;
@@ -96,14 +133,23 @@ function update() {
         eb.y += eb.speed;
         if (eb.x < player.x + player.width && eb.x + eb.width > player.x &&
             eb.y < player.y + player.height && eb.y + eb.height > player.y) {
-            lives--;
+            hitPlayer();
             enemyBullets.splice(index, 1);
-            if (lives <= 0) {
-                checkHighScore();
-                gameOver = true;
-            }
         } else if (eb.y > canvas.height) {
             enemyBullets.splice(index, 1);
+        }
+    });
+
+    powerUps.forEach((pu, index) => {
+        pu.y += pu.speed;
+        if (pu.x < player.x + player.width && pu.x + pu.width > player.x &&
+            pu.y < player.y + player.height && pu.y + pu.height > player.y) {
+            if (pu.type === 0) doubleShotTimer = 600;
+            if (pu.type === 1) shieldActive = true;
+            if (pu.type === 2) allyTimer = 600;
+            powerUps.splice(index, 1);
+        } else if (pu.y > canvas.height) {
+            powerUps.splice(index, 1);
         }
     });
 
@@ -127,6 +173,7 @@ function update() {
                     boss.active = false;
                     score += 500;
                     scoreDisplay.textContent = score;
+                    if (Math.random() < 0.5) spawnPowerUp(boss.x + boss.width / 2, boss.y + boss.height);
                     advanceWave();
                 }
             }
@@ -134,11 +181,7 @@ function update() {
 
         if (boss.y + boss.height >= player.y && boss.y <= player.y + player.height &&
             boss.x + boss.width >= player.x && boss.x <= player.x + player.width) {
-            lives--;
-            if (lives <= 0) {
-                checkHighScore();
-                gameOver = true;
-            }
+            hitPlayer();
         }
 
     } else {
@@ -154,13 +197,8 @@ function update() {
 
             if (enemy.y + enemy.height >= player.y && enemy.y <= player.y + player.height &&
                 enemy.x + enemy.width >= player.x && enemy.x <= player.x + player.width) {
-                lives--;
-                if (lives <= 0) {
-                    checkHighScore();
-                    gameOver = true;
-                } else {
-                    enemy.alive = false; 
-                }
+                hitPlayer();
+                enemy.alive = false; 
             }
         });
 
@@ -186,6 +224,8 @@ function update() {
                     bullets.splice(bIndex, 1);
                     score += 10;
                     scoreDisplay.textContent = score;
+
+                    if (Math.random() < 0.05) spawnPowerUp(enemy.x, enemy.y);
                 }
             });
         });
@@ -194,6 +234,11 @@ function update() {
             advanceWave();
         }
     }
+}
+
+function spawnPowerUp(px, py) {
+    let type = Math.floor(Math.random() * 3);
+    powerUps.push({ x: px, y: py, width: 25, height: 25, type: type, speed: 2 });
 }
 
 function advanceWave() {
@@ -236,8 +281,24 @@ function draw() {
         return;
     }
 
-    ctx.font = "32px Arial";
-    ctx.fillText("🛸", player.x, player.y + 28);
+    if (playerInvincible % 10 < 5) {
+        ctx.font = "32px Arial";
+        ctx.fillText("🛸", player.x, player.y + 28);
+    }
+
+    if (shieldActive) {
+        ctx.beginPath();
+        ctx.arc(player.x + player.width / 2, player.y + player.height / 2 - 4, 30, 0, Math.PI * 2);
+        ctx.strokeStyle = "#00ffff";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.closePath();
+    }
+
+    if (allyTimer > 0) {
+        ctx.font = "24px Arial";
+        ctx.fillText("🤖", ally.x, ally.y + 20);
+    }
 
     ctx.fillStyle = "#39ff14";
     bullets.forEach(bullet => {
@@ -247,6 +308,12 @@ function draw() {
     ctx.fillStyle = "#ff0055";
     enemyBullets.forEach(eb => {
         ctx.fillRect(eb.x, eb.y, eb.width, eb.height);
+    });
+
+    ctx.font = "24px Arial";
+    powerUps.forEach(pu => {
+        let icon = pu.type === 0 ? "🔫" : (pu.type === 1 ? "🛡️" : "🤖");
+        ctx.fillText(icon, pu.x, pu.y + 20);
     });
 
     if (boss.active) {
